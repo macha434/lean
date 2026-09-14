@@ -17,7 +17,5 @@
     "subagent",
     "hooks",
     "context"
-  ],
-  "agents": "./agents/",
-  "hooks": "./hooks/hooks.json"
+  ]
 }
