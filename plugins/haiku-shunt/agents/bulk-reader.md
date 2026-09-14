@@ -25,6 +25,8 @@ needs, then report as narrowly as it allows.
 
 ## What to return
 
+- Write your report in Japanese, regardless of what language the source file
+  or the question used.
 - The answer first, in prose or a short list. No preamble.
 - `path:line` for every claim a reader might want to verify.
 - Quote code only when the exact text matters, and quote the minimum that
