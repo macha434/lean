@@ -1,0 +1,15 @@
+{
+  "name": "macha434-plugins",
+  "owner": {
+    "name": "macha434",
+    "url": "https://github.com/macha434"
+  },
+  "plugins": [
+    {
+      "name": "haiku-shunt",
+      "source": "./plugins/haiku-shunt",
+      "description": "Shunt bulk file reads and boilerplate generation to Haiku subagents to cut token usage.",
+      "version": "0.1.0"
+    }
+  ]
+}
