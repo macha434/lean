@@ -7,5 +7,4 @@ Issue/PRの説明、エージェントの報告文など)は日本語で書く�
 JSON のキー名・ファイル内の固定文字列(フックが出力する `permissionDecisionReason`
 など、利用者側の環境が日本語とは限らない箇所)は英語のままでよい。
 
-README は英語をメイン(`README.md`)、日本語をサブ(`README.ja.md`)とする
-既存の構成を維持する。
+README は `README.md` 1本のみ、日本語で書く。英語版は用意しない。

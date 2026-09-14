@@ -1,73 +1,69 @@
 # haiku-shunt
 
-A Claude Code plugin that keeps bulk file reading and boilerplate generation out
-of your main conversation by shunting them to Haiku subagents.
+大きなファイルの読み込みと定型コードの生成を Haiku のサブエージェントへ受け流し、
+メインの会話のコンテキストに載せないようにする Claude Code プラグインである。
 
-[日本語版 README](README.ja.md)
+## 概要
 
-## Overview
+- 対象ユーザー: 大きなファイルの読み込みと機械的なコード生成がトークン消費の
+  大半を占めている Claude Code ユーザー
+- 解決する課題: メインの会話で 2,000 行のファイルを読むと、その内容はセッション
+  が終わるまでコンテキストに残り続け、以降のすべてのターンで課金対象になる
+- 価値: 同じファイルをサブエージェント内で読めば、コストは要約 1 回分で済む。
+  会話に届くのは答えだけで、ファイル本体は破棄される
 
-- Target users: Claude Code users whose token usage is dominated by reading
-  large files and generating mechanical code.
-- Problem solved: a 2,000-line file read in the main conversation stays in
-  context for the rest of the session, and every subsequent turn pays for it.
-- Value: the same file read inside a subagent costs one summary. Only the
-  answer reaches your conversation; the file itself is discarded.
+これは Spotify が Claude Code のトークン使用量を約 90% 削減した手法を、単一ベンダー
+で再構成したものである。Spotify の `shunt` は社内基盤 Portal を経由して Gemini Flash
+に処理を振り分けるが、本プラグインは Claude Haiku だけで同じことを行うため、通常の
+Claude Code さえあれば誰でも利用できる。
 
-This is a single-vendor take on the approach Spotify described when they cut
-Claude Code token usage by ~90%. Their `shunt` plugin routes bulk work to
-Gemini Flash through Spotify's internal Portal platform. This one does the same
-thing with Claude Haiku and nothing else, so it works for anyone with a plain
-Claude Code install.
+## 主な機能
 
-## Key Features
+- **自動化するフック**: メインの会話における大きなファイルの全体読み込みを
+  ブロックし、委譲するよう Claude に指示する。運用ルールを人間が覚えておく
+  必要がない
+- **`bulk-reader`**: 使い捨てのコンテキストでファイルを読み、質問に対する
+  抜粋だけを返す Haiku のサブエージェント
+- **`code-writer`**: 設計の決まった機械的なコードをディスクへ直接書き込み、
+  パスだけを報告する Haiku のサブエージェント。生成されたコードは会話に
+  一切入らない
+- **常にフェイルオープン**: `jq` がない、パスが読めない、フックの入力が壊れて
+  いる — いずれの失敗経路でも読み込みを許可する。コスト最適化がセッションを
+  止める原因になってはならない
 
-- **A hook that makes it automatic.** Large whole-file reads in the main
-  conversation are blocked with a message telling Claude to delegate instead.
-  You do not have to remember the policy.
-- **`bulk-reader`** — a Haiku subagent that reads files in its own disposable
-  context and returns only the extract that answers your question.
-- **`code-writer`** — a Haiku subagent that writes settled, mechanical code
-  straight to disk and reports paths, so generated code never enters your
-  context at all.
-- **Fails open, always.** Missing `jq`, unreadable paths, malformed hook input:
-  every failure path allows the read. A cost optimisation should never be the
-  reason a session stops working.
+## 仕組み
 
-## How it works
+フックとエージェントの2層構成である。
 
-Three layers, matching the structure Spotify used:
-
-| Layer | File | Role |
+| 層 | ファイル | 役割 |
 |---|---|---|
-| Hook | `hooks/check-file-size.sh` | Intercepts `Read`, blocks whole-file reads over the threshold |
-| Agents | `agents/*.md` | Do the bulk work on `model: haiku` |
-| Skill | `skills/delegating-bulk-work/` | Tells Claude to delegate *before* it hits the hook |
+| フック | `hooks/check-file-size.sh` | `Read` を横取りし、閾値を超える全体読み込みをブロックする |
+| エージェント | `agents/*.md` | `model: haiku` で実作業を担当する |
 
-The hook allows the call — never blocks — when any of these hold:
+次のいずれかに該当する場合、フックは必ず読み込みを許可する。
 
-- it is running inside a subagent (`agent_id` is present), so the delegate
-  itself always reads freely and there is no loop;
-- the read is bounded by `offset` or `limit`, since a targeted read is already
-  what we want;
-- the file is binary, missing, unreadable, or under the line threshold.
+- サブエージェント内で実行されている(`agent_id` が存在する)場合。委譲先自身は
+  常に自由に読めるため、ループにならない
+- `offset` または `limit` で範囲が限定されている場合。狙いを絞った読み込みは
+  そもそも推奨される形である
+- ファイルがバイナリ、存在しない、読み取り不可、または行数が閾値未満の場合
 
-## Requirements
+## 必要なもの
 
-- Claude Code with plugin support
-- `jq` — without it the hook allows everything and the plugin does nothing
+- プラグインに対応した Claude Code
+- `jq` — ない場合フックはすべてを許可し、プラグインは何もしない
 
-## Setup
+## セットアップ
 
 ```bash
 claude plugin marketplace add macha434/haiku-shunt
 claude plugin install haiku-shunt@macha434-plugins
 ```
 
-## Usage
+## 使い方
 
-Nothing to invoke. Once installed, reading a large file in the main
-conversation is redirected:
+呼び出す操作は不要である。インストール後、メインの会話で大きなファイルを
+読もうとすると次のように誘導される。
 
 ```
 haiku-shunt: src/app/routes.ts is 1,240 lines (threshold 350).
@@ -76,51 +72,52 @@ Reading it in full would load all of it into this conversation's context.
 Delegate it instead: call the Task/Agent tool with subagent_type "bulk-reader"...
 ```
 
-You can also delegate explicitly at any time:
+任意のタイミングで明示的に委譲することもできる。
 
-> Use the bulk-reader agent to find where the retry policy is configured in
-> `src/http/`.
+> bulk-reader エージェントを使って、`src/http/` のどこでリトライポリシーが
+> 設定されているか調べて。
 
-> Use the code-writer agent to add table-driven tests for `parseDuration`.
+> code-writer エージェントを使って、`parseDuration` のテーブル駆動テストを
+> 追加して。
 
-## Configuration
+## 設定
 
-Both are read from the environment at hook time.
+いずれもフック実行時に環境変数から読み込まれる。
 
-| Variable | Default | Effect |
+| 変数 | 既定値 | 効果 |
 |---|---|---|
-| `HAIKU_SHUNT_MIN_LINES` | `350` | Line count at or above which a whole-file read is blocked. A non-numeric value falls back to the default. |
-| `HAIKU_SHUNT_DISABLE` | unset | Set to `1` to allow every read and disable the hook. |
+| `HAIKU_SHUNT_MIN_LINES` | `350` | この行数以上の全体読み込みをブロックする。数値以外を指定した場合は既定値に戻る |
+| `HAIKU_SHUNT_DISABLE` | 未設定 | `1` を設定するとすべての読み込みを許可し、フックを無効化する |
 
-## Development
+## 開発
 
 ```bash
 tests/run-tests.sh
 ```
 
-The suite drives the hook script with recorded `PreToolUse` payloads and
-asserts allow/deny for each case, including the fail-open paths.
+記録済みの `PreToolUse` ペイロードでフックスクリプトを駆動し、フェイルオープン
+の経路を含めて各ケースの許可/ブロックを検証する。
 
 ## FAQ
 
-**Q. Does this block the subagent from reading the file too?**
-A. No. `agent_id` appears in the hook payload only inside a subagent, and the
-hook allows the call whenever it is present.
+**Q. 委譲先のサブエージェントまでブロックされないか?**
+A. されない。`agent_id` はサブエージェント内でのみフックのペイロードに現れ、
+存在する場合フックは常に読み込みを許可する。
 
-**Q. What if I actually need the raw text in the main conversation?**
-A. Re-issue the read with `offset`/`limit`. Ranged reads are never blocked.
-To turn the hook off entirely, set `HAIKU_SHUNT_DISABLE=1`.
+**Q. メインの会話でどうしても生のテキストが必要な場合は?**
+A. `offset`/`limit` を付けて読み直せばよい。範囲指定の読み込みはブロックされない。
+フック自体を止めたい場合は `HAIKU_SHUNT_DISABLE=1` を設定する。
 
-**Q. Is `code-writer` enforced by a hook as well?**
-A. No. There is no reliable signal for "this generation is mechanical", so
-that half is policy (the skill and the agent description) rather than
-enforcement.
+**Q. `code-writer` もフックで強制されるのか?**
+A. されない。「この生成は機械的である」ことを確実に判定する手段がないため、
+こちら側は強制ではなくエージェントの説明による方針として提供している。
 
-## Credits
+## クレジット
 
-The three-layer design and the file-size-threshold idea come from
-[spotify/portal-ai-plugins](https://github.com/spotify/portal-ai-plugins).
+フックとエージェントによる委譲、ファイルサイズ閾値のアイデアは
+[spotify/portal-ai-plugins](https://github.com/spotify/portal-ai-plugins)
+に由来する。
 
-## License
+## ライセンス
 
 MIT
