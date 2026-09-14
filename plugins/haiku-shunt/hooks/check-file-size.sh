@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# PreToolUse hook for the Read tool.
-#
-# Every branch that is not "this is a large whole-file read from the main
-# conversation" exits 0 and allows the call. A cost optimisation must never be
-# the reason someone's session stops working, so this fails open on missing
-# dependencies, unreadable paths and malformed input alike.
+# PreToolUse hook for Read. Fails open on every path except a large whole-file
+# read from the main conversation - see README.md for why.
 
 set -u
 
