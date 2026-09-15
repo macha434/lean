@@ -6,7 +6,7 @@ set -u
 
 allow() { exit 0; }
 
-[ "${HAIKU_SHUNT_DISABLE:-0}" = "1" ] && allow
+[ "${LEAN_DISABLE:-0}" = "1" ] && allow
 
 command -v jq >/dev/null 2>&1 || allow
 
@@ -33,7 +33,7 @@ limit=$(printf '%s' "$input" | jq -r '.tool_input.limit // empty' 2>/dev/null)
 # handles those natively.
 grep -qI . "$file_path" 2>/dev/null || allow
 
-min_lines=${HAIKU_SHUNT_MIN_LINES:-350}
+min_lines=${LEAN_MIN_LINES:-350}
 case "$min_lines" in
   '' | *[!0-9]*) min_lines=350 ;;
 esac
@@ -43,7 +43,7 @@ lines=${lines//[!0-9]/}
 [ -n "$lines" ] || allow
 [ "$lines" -ge "$min_lines" ] || allow
 
-reason="haiku-shunt: ${file_path} is ${lines} lines (threshold ${min_lines}). \
+reason="lean: ${file_path} is ${lines} lines (threshold ${min_lines}). \
 Reading it in full would load all of it into this conversation's context.
 
 Delegate it instead: call the Task/Agent tool with subagent_type \"bulk-reader\" \

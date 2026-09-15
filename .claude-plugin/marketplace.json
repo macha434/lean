@@ -6,10 +6,10 @@
   },
   "plugins": [
     {
-      "name": "haiku-shunt",
-      "source": "./plugins/haiku-shunt",
-      "description": "Shunt bulk file reads and boilerplate generation to Haiku subagents to cut token usage.",
-      "version": "0.1.0"
+      "name": "lean",
+      "source": "./plugins/lean",
+      "description": "Keep bulk reads, boilerplate generation, verbose test output, and CLAUDE.md bloat out of your main conversation to cut token usage.",
+      "version": "0.2.0"
     }
   ]
 }

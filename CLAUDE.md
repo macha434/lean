@@ -1,4 +1,4 @@
-# haiku-shunt
+# lean
 
 ## 言語
 

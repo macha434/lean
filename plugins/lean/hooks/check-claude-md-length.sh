@@ -11,7 +11,7 @@ set -u
 
 allow() { exit 0; }
 
-[ "${HAIKU_SHUNT_DISABLE:-0}" = "1" ] && allow
+[ "${LEAN_DISABLE:-0}" = "1" ] && allow
 
 command -v jq >/dev/null 2>&1 || allow
 
@@ -50,13 +50,13 @@ case "$tool_name" in
   *) allow ;;
 esac
 
-warn_lines=${HAIKU_SHUNT_CLAUDE_MD_WARN_LINES:-250}
-block_lines=${HAIKU_SHUNT_CLAUDE_MD_BLOCK_LINES:-300}
+warn_lines=${LEAN_CLAUDE_MD_WARN_LINES:-250}
+block_lines=${LEAN_CLAUDE_MD_BLOCK_LINES:-300}
 case "$warn_lines" in '' | *[!0-9]*) warn_lines=250 ;; esac
 case "$block_lines" in '' | *[!0-9]*) block_lines=300 ;; esac
 
 if [ "$predicted" -ge "$block_lines" ]; then
-  reason="haiku-shunt: this edit would take ${file_path} to about ${predicted} \
+  reason="lean: this edit would take ${file_path} to about ${predicted} \
 lines (block threshold ${block_lines}). CLAUDE.md loads into every turn's \
 context, so size here is a recurring cost, not a one-time one.
 
@@ -64,7 +64,7 @@ Move the content this edit adds into a skill instead (skills load on demand, \
 not every turn), or trim something else in CLAUDE.md to make room. Re-run the \
 edit once the file is under the threshold.
 
-To bypass once, set HAIKU_SHUNT_DISABLE=1 for this command."
+To bypass once, set LEAN_DISABLE=1 for this command."
   jq -n --arg reason "$reason" '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
@@ -76,7 +76,7 @@ To bypass once, set HAIKU_SHUNT_DISABLE=1 for this command."
 fi
 
 if [ "$predicted" -ge "$warn_lines" ]; then
-  reason="haiku-shunt: ${file_path} is about to reach ${predicted} lines \
+  reason="lean: ${file_path} is about to reach ${predicted} lines \
 (warn threshold ${warn_lines}, block at ${block_lines}). Consider moving \
 some of this into a skill before it hits the block threshold."
   jq -n --arg reason "$reason" '{

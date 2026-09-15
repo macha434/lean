@@ -1,0 +1,21 @@
+{
+  "name": "lean",
+  "displayName": "Lean",
+  "version": "0.2.0",
+  "description": "Keeps bulk reads, boilerplate generation, verbose test output, and CLAUDE.md bloat out of your main conversation to cut token usage.",
+  "author": {
+    "name": "macha434",
+    "url": "https://github.com/macha434"
+  },
+  "homepage": "https://github.com/macha434/lean",
+  "repository": "https://github.com/macha434/lean",
+  "license": "MIT",
+  "keywords": [
+    "cost",
+    "tokens",
+    "haiku",
+    "subagent",
+    "hooks",
+    "context"
+  ]
+}

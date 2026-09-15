@@ -7,7 +7,7 @@ set -u
 
 allow() { exit 0; }
 
-[ "${HAIKU_SHUNT_DISABLE:-0}" = "1" ] && allow
+[ "${LEAN_DISABLE:-0}" = "1" ] && allow
 
 command -v jq >/dev/null 2>&1 || allow
 
@@ -30,7 +30,7 @@ case "$cmd" in
   *grep*|*'>'*) allow ;;
 esac
 
-max_lines=${HAIKU_SHUNT_BASH_MAX_LINES:-100}
+max_lines=${LEAN_BASH_MAX_LINES:-100}
 case "$max_lines" in
   '' | *[!0-9]*) max_lines=100 ;;
 esac

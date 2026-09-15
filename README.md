@@ -1,16 +1,19 @@
-# haiku-shunt
+# lean
 
-大きなファイルの読み込みと定型コードの生成を Haiku のサブエージェントへ受け流し、
-メインの会話のコンテキストに載せないようにする Claude Code プラグインである。
+大きなファイルの読み込み、定型コードの生成、冗長なテスト出力、肥大化した
+CLAUDE.md — メインの会話のコンテキストを圧迫するものをまとめて逃がす
+Claude Code プラグインである。
 
 ## 概要
 
-- 対象ユーザー: 大きなファイルの読み込みと機械的なコード生成がトークン消費の
-  大半を占めている Claude Code ユーザー
-- 解決する課題: メインの会話で 2,000 行のファイルを読むと、その内容はセッション
-  が終わるまでコンテキストに残り続け、以降のすべてのターンで課金対象になる
-- 価値: 同じファイルをサブエージェント内で読めば、コストは要約 1 回分で済む。
-  会話に届くのは答えだけで、ファイル本体は破棄される
+- 対象ユーザー: 大きなファイルの読み込み・機械的なコード生成・テスト出力・
+  CLAUDE.md の肥大化がトークン消費の大半を占めている Claude Code ユーザー
+- 解決する課題: メインの会話に一度載った内容(2,000行のファイル、10,000行の
+  テストログ、300行のCLAUDE.md)は、セッションが終わるまでコンテキストに
+  残り続け、以降のすべてのターンで課金対象になる
+- 価値: 大きなファイルと機械的なコード生成は Haiku のサブエージェントへ、
+  テスト出力はその場でのフィルタリングへ、CLAUDE.md の肥大化は書き込み前の
+  警告・ブロックへ。会話に届くのは必要な情報だけになる
 
 これは Spotify が Claude Code のトークン使用量を約 90% 削減した手法を、単一ベンダー
 で再構成したものである。Spotify の `shunt` は社内基盤 Portal を経由して Gemini Flash
@@ -19,16 +22,20 @@ Claude Code さえあれば誰でも利用できる。
 
 ## 主な機能
 
-- **自動化するフック**: メインの会話における大きなファイルの全体読み込みを
-  ブロックし、委譲するよう Claude に指示する。運用ルールを人間が覚えておく
-  必要がない
+- **大きなファイル読み込みのブロック**: メインの会話における大きなファイルの
+  全体読み込みをブロックし、委譲するよう Claude に指示する
+- **テスト出力のフィルタリング**: `npm test`・`pytest`・`go test` などの
+  テストランナー実行を検知し、失敗箇所(`FAIL`/`ERROR`)だけに絞って返す
+- **CLAUDE.md 肥大化のガード**: `CLAUDE.md` への書き込みが閾値を超えそうな
+  場合、書き込み前に警告し、さらに超える場合はブロックして skills への
+  移動を促す
 - **`bulk-reader`**: 使い捨てのコンテキストでファイルを読み、質問に対する
   抜粋だけを返す Haiku のサブエージェント
 - **`code-writer`**: 設計の決まった機械的なコードをディスクへ直接書き込み、
   パスだけを報告する Haiku のサブエージェント。生成されたコードは会話に
   一切入らない
 - **常にフェイルオープン**: `jq` がない、パスが読めない、フックの入力が壊れて
-  いる — いずれの失敗経路でも読み込みを許可する。コスト最適化がセッションを
+  いる — いずれの失敗経路でも元の操作を許可する。コスト最適化がセッションを
   止める原因になってはならない
 
 ## 仕組み
@@ -38,15 +45,27 @@ Claude Code さえあれば誰でも利用できる。
 | 層 | ファイル | 役割 |
 |---|---|---|
 | フック | `hooks/check-file-size.sh` | `Read` を横取りし、閾値を超える全体読み込みをブロックする |
+| フック | `hooks/filter-bash-test-output.sh` | `Bash` を横取りし、テストランナーの出力を失敗箇所だけに絞る |
+| フック | `hooks/check-claude-md-length.sh` | `Edit`/`Write` を横取りし、`CLAUDE.md` の肥大化を書き込み前に警告・ブロックする |
 | エージェント | `agents/*.md` | `model: haiku` で実作業を担当する |
 
-次のいずれかに該当する場合、フックは必ず読み込みを許可する。
+`check-file-size.sh` は次のいずれかに該当する場合、必ず読み込みを許可する。
 
 - サブエージェント内で実行されている(`agent_id` が存在する)場合。委譲先自身は
   常に自由に読めるため、ループにならない
 - `offset` または `limit` で範囲が限定されている場合。狙いを絞った読み込みは
   そもそも推奨される形である
 - ファイルがバイナリ、存在しない、読み取り不可、または行数が閾値未満の場合
+
+`filter-bash-test-output.sh` はテストランナーと認識できるコマンドだけを
+書き換える。既に `grep` を含む、または `>` でリダイレクトしているコマンドは
+二重フィルタを避けるためそのまま通す。
+
+`check-claude-md-length.sh` は `PostToolUse` では書き込みをブロックできない
+(exit code 2 が効かない)ため、`PreToolUse` の時点で編集後の行数を予測して
+判定する。`Write` はそのまま内容の行数、`Edit` は現在の行数 +
+(`new_string` の行数 − `old_string` の行数) で見積もる。厳密ではないが
+警告としては十分な精度である。
 
 ## 必要なもの
 
@@ -56,20 +75,29 @@ Claude Code さえあれば誰でも利用できる。
 ## セットアップ
 
 ```bash
-claude plugin marketplace add macha434/haiku-shunt
-claude plugin install haiku-shunt@macha434-plugins
+claude plugin marketplace add macha434/lean
+claude plugin install lean@macha434-plugins
 ```
 
 ## 使い方
 
-呼び出す操作は不要である。インストール後、メインの会話で大きなファイルを
-読もうとすると次のように誘導される。
+呼び出す操作は不要である。インストール後、対象の操作をしようとすると
+自動的にフックが働く。
+
+大きなファイルを読もうとすると:
 
 ```
-haiku-shunt: src/app/routes.ts is 1,240 lines (threshold 350).
+lean: src/app/routes.ts is 1,240 lines (threshold 350).
 Reading it in full would load all of it into this conversation's context.
 
 Delegate it instead: call the Task/Agent tool with subagent_type "bulk-reader"...
+```
+
+`CLAUDE.md` が閾値に近づくと:
+
+```
+lean: CLAUDE.md is about to reach 260 lines (warn threshold 250, block at 300).
+Consider moving some of this into a skill before it hits the block threshold.
 ```
 
 任意のタイミングで明示的に委譲することもできる。
@@ -86,8 +114,11 @@ Delegate it instead: call the Task/Agent tool with subagent_type "bulk-reader"..
 
 | 変数 | 既定値 | 効果 |
 |---|---|---|
-| `HAIKU_SHUNT_MIN_LINES` | `350` | この行数以上の全体読み込みをブロックする。数値以外を指定した場合は既定値に戻る |
-| `HAIKU_SHUNT_DISABLE` | 未設定 | `1` を設定するとすべての読み込みを許可し、フックを無効化する |
+| `LEAN_MIN_LINES` | `350` | この行数以上の全体読み込みをブロックする。数値以外を指定した場合は既定値に戻る |
+| `LEAN_BASH_MAX_LINES` | `100` | テスト出力フィルタの `head` に渡す最大行数 |
+| `LEAN_CLAUDE_MD_WARN_LINES` | `250` | この行数以上になる編集で警告する(許可はする) |
+| `LEAN_CLAUDE_MD_BLOCK_LINES` | `300` | この行数以上になる編集をブロックする |
+| `LEAN_DISABLE` | 未設定 | `1` を設定すると全フックを無効化する |
 
 ## 開発
 
@@ -95,22 +126,25 @@ Delegate it instead: call the Task/Agent tool with subagent_type "bulk-reader"..
 tests/run-tests.sh
 ```
 
-記録済みの `PreToolUse` ペイロードでフックスクリプトを駆動し、フェイルオープン
+記録済みの `PreToolUse` ペイロードで各フックスクリプトを駆動し、フェイルオープン
 の経路を含めて各ケースの許可/ブロックを検証する。
 
 ## FAQ
 
 **Q. 委譲先のサブエージェントまでブロックされないか?**
 A. されない。`agent_id` はサブエージェント内でのみフックのペイロードに現れ、
-存在する場合フックは常に読み込みを許可する。
+存在する場合フックは常に元の操作を許可する。
 
 **Q. メインの会話でどうしても生のテキストが必要な場合は?**
 A. `offset`/`limit` を付けて読み直せばよい。範囲指定の読み込みはブロックされない。
-フック自体を止めたい場合は `HAIKU_SHUNT_DISABLE=1` を設定する。
+フック全体を止めたい場合は `LEAN_DISABLE=1` を設定する。
 
 **Q. `code-writer` もフックで強制されるのか?**
 A. されない。「この生成は機械的である」ことを確実に判定する手段がないため、
 こちら側は強制ではなくエージェントの説明による方針として提供している。
+
+**Q. CLAUDE.md のブロックを一度だけ回避したい**
+A. その1回のコマンドに `LEAN_DISABLE=1` を付けて実行する。
 
 ## クレジット
 
