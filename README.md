@@ -25,7 +25,8 @@ Claude Code さえあれば誰でも利用できる。
 - **大きなファイル読み込みのブロック**: メインの会話における大きなファイルの
   全体読み込みをブロックし、委譲するよう Claude に指示する
 - **テスト出力のフィルタリング**: `npm test`・`pytest`・`go test` などの
-  テストランナー実行を検知し、失敗箇所(`FAIL`/`ERROR`)だけに絞って返す
+  テストランナー実行を検知し、失敗箇所(`FAIL`/`ERROR`)だけに絞って返す。
+  Windows の PowerShell ツールにも対応している
 - **CLAUDE.md 肥大化のガード**: `CLAUDE.md` への書き込みが閾値を超えそうな
   場合、書き込み前に警告し、さらに超える場合はブロックして skills への
   移動を促す
@@ -46,6 +47,7 @@ Claude Code さえあれば誰でも利用できる。
 |---|---|---|
 | フック | `hooks/check-file-size.sh` | `Read` を横取りし、閾値を超える全体読み込みをブロックする |
 | フック | `hooks/filter-bash-test-output.sh` | `Bash` を横取りし、テストランナーの出力を失敗箇所だけに絞る |
+| フック | `hooks/filter-powershell-test-output.sh` | `PowerShell` を横取りし、テストランナーの出力を失敗箇所だけに絞る |
 | フック | `hooks/check-claude-md-length.sh` | `Edit`/`Write` を横取りし、`CLAUDE.md` の肥大化を書き込み前に警告・ブロックする |
 | エージェント | `agents/*.md` | `model: haiku` で実作業を担当する |
 
@@ -60,6 +62,24 @@ Claude Code さえあれば誰でも利用できる。
 `filter-bash-test-output.sh` はテストランナーと認識できるコマンドだけを
 書き換える。既に `grep` を含む、または `>` でリダイレクトしているコマンドは
 二重フィルタを避けるためそのまま通す。
+
+`filter-powershell-test-output.sh` は同じ一覧のテストコマンドを PowerShell
+ツール向けに書き換える。
+
+```
+<元のコマンド> | Out-String -Stream | Select-String -Pattern 'FAIL|ERROR|error:' -CaseSensitive -Context 0,5 | Select-Object -First <上限行数>
+```
+
+`Select-String` は既定で大文字小文字を区別しないため、`-CaseSensitive` を付けて
+Bash 版の `grep` に揃えている。付けないと、`npm test` が出力する
+`> node test-fail.js` のような行が `FAIL` に一致してしまう。
+
+既に `Select-String`(エイリアス `sls` を含む)・`Out-File`・`Tee-Object` を
+含む、または `>` でリダイレクトしているコマンドは、二重フィルタを避けるため
+そのまま通す。いずれもサブエージェント内では何もしない。
+
+`2>&1` は付けない。Windows PowerShell 5.1 ではネイティブコマンドへの `2>&1` が
+各行を `ErrorRecord` に包み、終了コードが 0 でも `$?` を false にするためである。
 
 `check-claude-md-length.sh` は `PostToolUse` では書き込みをブロックできない
 (exit code 2 が効かない)ため、`PreToolUse` の時点で編集後の行数を予測して
@@ -115,10 +135,30 @@ Consider moving some of this into a skill before it hits the block threshold.
 | 変数 | 既定値 | 効果 |
 |---|---|---|
 | `LEAN_MIN_LINES` | `350` | この行数以上の全体読み込みをブロックする。数値以外を指定した場合は既定値に戻る |
-| `LEAN_BASH_MAX_LINES` | `100` | テスト出力フィルタの `head` に渡す最大行数 |
+| `LEAN_BASH_MAX_LINES` | `100` | Bash 用テスト出力フィルタの `head` に渡す最大行数。PowerShell 用の既定値も兼ねる |
+| `LEAN_PS_MAX_LINES` | 未設定 | PowerShell 用テスト出力フィルタの `Select-Object -First` に渡す最大行数。未設定なら `LEAN_BASH_MAX_LINES`、それも未設定なら `100`。数値以外は `100` に戻る |
 | `LEAN_CLAUDE_MD_WARN_LINES` | `250` | この行数以上になる編集で警告する(許可はする) |
 | `LEAN_CLAUDE_MD_BLOCK_LINES` | `300` | この行数以上になる編集をブロックする |
 | `LEAN_DISABLE` | 未設定 | `1` を設定すると全フックを無効化する |
+
+## 注意
+
+- **Bash 版は終了コードが見えなくなる**: テスト出力フィルタは、元のコマンドの
+  出力をパイプで絞る。そのため、書き換え後のコマンドの終了コードは元のテスト
+  コマンドのものではなく、パイプ末尾の `head` のものになる。実機でも、失敗する
+  テストを Bash ツールで実行して、失敗の表示が出ないことを確認した。テストの
+  成否は出力に `FAIL`/`ERROR` が現れるかで判断する。終了コードが必要な場合は、
+  Claude Code を起動する環境で `LEAN_DISABLE=1` を設定してフックを無効にする
+- **PowerShell 版は終了コードが保たれる**: Windows 11 の PowerShell ツールで、
+  失敗するテストを実行したところ、フィルタ後も元のコマンドの終了コード(1)が
+  `Exit code 1` として返ることを確認した。他の PowerShell のバージョンでは未確認
+- **PowerShell 版は標準エラー出力を絞り込まない**: `2>&1` を付けないため、
+  ネイティブコマンドの標準エラー出力はパイプを通らず、そのまま出る。実機で、
+  パターンに一致しない標準エラー出力(node の起動エラーのスタックトレース)が
+  全文出ることを確認した。テスト結果を標準エラー出力へ書くランナー(例: Jest)では、
+  絞り込みの効果が出ない可能性がある(ランナーごとの挙動は未確認)
+- **絞り込みは行単位**: 失敗を示す行にパターンが含まれないランナーでは、失敗が
+  出力から落ちることがある
 
 ## 開発
 

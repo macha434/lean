@@ -7,6 +7,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)/plugins/lean/hooks"
 HOOK="$ROOT/check-file-size.sh"
 BASH_HOOK="$ROOT/filter-bash-test-output.sh"
+PS_HOOK="$ROOT/filter-powershell-test-output.sh"
 CLAUDE_MD_HOOK="$ROOT/check-claude-md-length.sh"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -55,6 +56,26 @@ check_contains() {
   else
     fail=$((fail + 1))
     printf 'FAIL %s (expected to contain %s, got: %s)\n' "$name" "$expected" "$out"
+  fi
+}
+
+# check_lacks <hook> <name> <substring that must NOT appear> <stdin json> [env assignments...]
+# Also requires non-empty output, so a hook that rewrote nothing can't pass.
+check_lacks() {
+  local hook=$1 name=$2 forbidden=$3 payload=$4
+  shift 4
+  local out
+  out=$(printf '%s' "$payload" | env "$@" "$hook" 2>/dev/null)
+  local ok=0
+  if [ -n "$out" ]; then
+    case "$out" in *"$forbidden"*) ;; *) ok=1 ;; esac
+  fi
+  if [ "$ok" = "1" ]; then
+    pass=$((pass + 1))
+    printf 'ok   %s\n' "$name"
+  else
+    fail=$((fail + 1))
+    printf 'FAIL %s (expected output without %s, got: %s)\n' "$name" "$forbidden" "$out"
   fi
 }
 
@@ -141,6 +162,84 @@ check_contains "$BASH_HOOK" "bash command from a subagent is left alone" EMPTY \
 check_contains "$BASH_HOOK" "disable flag leaves a test command unmodified" EMPTY \
   '{"tool_name":"Bash","tool_input":{"command":"npm test"}}' \
   LEAN_DISABLE=1
+
+### filter-powershell-test-output.sh ###
+
+check_contains "$PS_HOOK" "npm test is rewritten to filter failures" "Select-String -Pattern 'FAIL|ERROR|error:' -CaseSensitive -Context 0,5" \
+  '{"tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "rewritten command keeps the original command first" '"command": "npm test | Out-String -Stream' \
+  '{"tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
+  IGNORE=1
+
+check_lacks "$PS_HOOK" "rewrite does not append 2>&1" '2>&1' \
+  '{"tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "pytest is rewritten to filter failures" "Select-Object -First 100" \
+  '{"tool_name":"PowerShell","tool_input":{"command":"pytest"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "non-test command passes through unmodified" EMPTY \
+  '{"tool_name":"PowerShell","tool_input":{"command":"Get-ChildItem"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "command already using Select-String is left alone" EMPTY \
+  '{"tool_name":"PowerShell","tool_input":{"command":"pytest | Select-String FAIL"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "Select-String match is case-insensitive" EMPTY \
+  '{"tool_name":"PowerShell","tool_input":{"command":"pytest | select-string FAIL"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "command already using the sls alias is left alone" EMPTY \
+  '{"tool_name":"PowerShell","tool_input":{"command":"pytest | sls FAIL"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "sls inside another word does not count as a filter" "Select-String -Pattern" \
+  '{"tool_name":"PowerShell","tool_input":{"command":"pytest tests/test_hassls.py"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "command already redirected to a file is left alone" EMPTY \
+  '{"tool_name":"PowerShell","tool_input":{"command":"npm test > out.log"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "command already using Out-File is left alone" EMPTY \
+  '{"tool_name":"PowerShell","tool_input":{"command":"npm test | Out-File out.log"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "command already using Tee-Object is left alone" EMPTY \
+  '{"tool_name":"PowerShell","tool_input":{"command":"npm test | Tee-Object -FilePath out.log"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "powershell command from a subagent is left alone" EMPTY \
+  '{"agent_id":"a1","tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "disable flag leaves a test command unmodified" EMPTY \
+  '{"tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
+  LEAN_DISABLE=1
+
+check_contains "$PS_HOOK" "LEAN_PS_MAX_LINES overrides the line cap" "Select-Object -First 7" \
+  '{"tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
+  LEAN_PS_MAX_LINES=7
+
+check_contains "$PS_HOOK" "LEAN_BASH_MAX_LINES is the fallback line cap" "Select-Object -First 9" \
+  '{"tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
+  LEAN_BASH_MAX_LINES=9
+
+check_contains "$PS_HOOK" "non-numeric line cap falls back to the default" "Select-Object -First 100" \
+  '{"tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
+  LEAN_PS_MAX_LINES=abc
+
+check_contains "$PS_HOOK" "malformed input is left alone" EMPTY \
+  'not json at all' \
+  IGNORE=1
+
+check_contains "$PS_HOOK" "empty input is left alone" EMPTY \
+  '' \
+  IGNORE=1
 
 ### check-claude-md-length.sh ###
 

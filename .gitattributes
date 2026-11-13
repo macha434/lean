@@ -1,0 +1,4 @@
+# Hook scripts run under bash. CRLF breaks them ("bash\r: No such file or
+# directory"), so keep LF in every checkout, including Windows with
+# core.autocrlf=true.
+*.sh text eol=lf
