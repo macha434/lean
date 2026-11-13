@@ -67,8 +67,12 @@ Claude Code さえあれば誰でも利用できる。
 ツール向けに書き換える。
 
 ```
-<元のコマンド> | Out-String -Stream | Select-String -Pattern 'FAIL|ERROR|error:' -Context 0,5 | Select-Object -First <上限行数>
+<元のコマンド> | Out-String -Stream | Select-String -Pattern 'FAIL|ERROR|error:' -CaseSensitive -Context 0,5 | Select-Object -First <上限行数>
 ```
+
+`Select-String` は既定で大文字小文字を区別しないため、`-CaseSensitive` を付けて
+Bash 版の `grep` に揃えている。付けないと、`npm test` が出力する
+`> node test-fail.js` のような行が `FAIL` に一致してしまう。
 
 既に `Select-String`(エイリアス `sls` を含む)・`Out-File`・`Tee-Object` を
 含む、または `>` でリダイレクトしているコマンドは、二重フィルタを避けるため
@@ -139,13 +143,19 @@ Consider moving some of this into a skill before it hits the block threshold.
 
 ## 注意
 
-- **終了コードが見えなくなる**: テスト出力フィルタは、元のコマンドの出力を
-  パイプで絞る。そのため、書き換え後のコマンドの終了コードは元のテスト
-  コマンドのものではなく、パイプ末尾のコマンド(Bash は `head`、PowerShell は
-  `Select-Object`)のものになる。PowerShell でも `$LASTEXITCODE` は元の
-  テストコマンドの結果を反映するとは限らない。テストの成否は出力に
-  `FAIL`/`ERROR` が現れるかで判断する。終了コードが必要な場合は、
+- **Bash 版は終了コードが見えなくなる**: テスト出力フィルタは、元のコマンドの
+  出力をパイプで絞る。そのため、書き換え後のコマンドの終了コードは元のテスト
+  コマンドのものではなく、パイプ末尾の `head` のものになる。実機でも、失敗する
+  テストを Bash ツールで実行して、失敗の表示が出ないことを確認した。テストの
+  成否は出力に `FAIL`/`ERROR` が現れるかで判断する。終了コードが必要な場合は、
   Claude Code を起動する環境で `LEAN_DISABLE=1` を設定してフックを無効にする
+- **PowerShell 版は終了コードが保たれる**: Windows 11 の PowerShell ツールで、
+  失敗するテストを実行したところ、フィルタ後も元のコマンドの終了コード(1)が
+  `Exit code 1` として返ることを確認した。他の PowerShell のバージョンでは未確認
+- **PowerShell 版の標準エラー出力**: `2>&1` を付けないため、ネイティブコマンドの
+  標準エラー出力はパイプを通らず、絞り込まれずにそのまま出る可能性がある。
+  標準エラー出力だけにエラーを出すテストでは、その行がそのまま出ることを
+  確認した。パターンに一致しない標準エラー出力の扱いは未確認
 - **絞り込みは行単位**: 失敗を示す行にパターンが含まれないランナーでは、失敗が
   出力から落ちることがある
 

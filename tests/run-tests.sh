@@ -165,7 +165,7 @@ check_contains "$BASH_HOOK" "disable flag leaves a test command unmodified" EMPT
 
 ### filter-powershell-test-output.sh ###
 
-check_contains "$PS_HOOK" "npm test is rewritten to filter failures" "Select-String -Pattern 'FAIL|ERROR|error:' -Context 0,5" \
+check_contains "$PS_HOOK" "npm test is rewritten to filter failures" "Select-String -Pattern 'FAIL|ERROR|error:' -CaseSensitive -Context 0,5" \
   '{"tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
   IGNORE=1
 

@@ -6,6 +6,10 @@
 #
 # No "2>&1" is appended: in Windows PowerShell 5.1 it wraps every stderr line of
 # a native command in an ErrorRecord and flips $? to false even on exit code 0.
+#
+# -CaseSensitive is required: Select-String ignores case by default, so a name
+# like "test-fail.js" in npm's "> node test-fail.js" header would match "FAIL".
+# grep in the Bash hook is case-sensitive, and this keeps the two aligned.
 
 set -u
 
@@ -43,7 +47,7 @@ case "$max_lines" in
   '' | *[!0-9]*) max_lines=100 ;;
 esac
 
-filtered_cmd="$cmd | Out-String -Stream | Select-String -Pattern 'FAIL|ERROR|error:' -Context 0,5 | Select-Object -First $max_lines"
+filtered_cmd="$cmd | Out-String -Stream | Select-String -Pattern 'FAIL|ERROR|error:' -CaseSensitive -Context 0,5 | Select-Object -First $max_lines"
 
 printf '%s' "$input" | jq --arg cmd "$filtered_cmd" '{
   hookSpecificOutput: {
