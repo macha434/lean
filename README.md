@@ -157,10 +157,15 @@ Consider moving some of this into a skill before it hits the block threshold.
   失敗するテストを実行したところ、フィルタ後も元のコマンドの終了コード(1)が
   `Exit code 1` として返ることを確認した。他の PowerShell のバージョンでは未確認
 - **PowerShell 版の標準エラー出力**: `2>&1` で標準エラー出力も絞り込む。結果を
-  標準エラー出力へ書くランナー(例: Jest)も対象になる。実機では Windows
-  PowerShell 5.1(Desktop)だけで検証した。PowerShell 7 以降や、プロファイルで
-  `$ErrorActionPreference = 'Stop'` を設定している環境、実際のランナーでの
-  挙動は未確認
+  標準エラー出力へ書くランナー(例: Jest)も対象になるはずだが、実際のランナーでの
+  挙動は未確認。実機では Windows PowerShell 5.1(Desktop)と PowerShell 7.7(Core)の
+  両方で、絞り込み、終了コードの保持、成功時の空出力を確認した
+- **出力の順序**: 標準出力と標準エラー出力の順序が入れ替わることがあり、標準エラー
+  出力の行が、一致行の後ろの文脈行(`-Context 0,5`)として出ることがある
+  (PowerShell 7.7 で確認。原因は両者が別経路で届くためと推測している)
+- **PowerShell プロファイル**: PowerShell ツールはプロファイルを読み込まない
+  (公式ドキュメントの preview 時点の制限)ため、プロファイルでの
+  `$ErrorActionPreference` の設定は、このフィルタに影響しない
 - **絞り込みは行単位**: 失敗を示す行にパターンが含まれないランナーでは、失敗が
   出力から落ちることがある
 
