@@ -9,7 +9,7 @@
       "name": "lean",
       "source": "./plugins/lean",
       "description": "Keep bulk reads, boilerplate generation, verbose test output, and CLAUDE.md bloat out of your main conversation to cut token usage.",
-      "version": "0.2.0"
+      "version": "0.3.0"
     }
   ]
 }
