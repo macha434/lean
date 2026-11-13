@@ -67,7 +67,7 @@ Claude Code さえあれば誰でも利用できる。
 ツール向けに書き換える。
 
 ```
-<元のコマンド> | Out-String -Stream | Select-String -Pattern 'FAIL|ERROR|error:' -CaseSensitive -Context 0,5 | Select-Object -First <上限行数>
+<元のコマンド> 2>&1 | Out-String -Stream | Select-String -Pattern 'FAIL|ERROR|error:' -CaseSensitive -Context 0,5 | Select-Object -First <上限行数>
 ```
 
 `Select-String` は既定で大文字小文字を区別しないため、`-CaseSensitive` を付けて
@@ -78,8 +78,12 @@ Bash 版の `grep` に揃えている。付けないと、`npm test` が出力�
 含む、または `>` でリダイレクトしているコマンドは、二重フィルタを避けるため
 そのまま通す。いずれもサブエージェント内では何もしない。
 
-`2>&1` は付けない。Windows PowerShell 5.1 ではネイティブコマンドへの `2>&1` が
-各行を `ErrorRecord` に包み、終了コードが 0 でも `$?` を false にするためである。
+`2>&1` で標準エラー出力もパイプに流し、絞り込みの対象にする。付けないと、
+標準エラー出力は絞り込まれずにそのまま出る(実機で確認)。Windows PowerShell 5.1 は
+`2>&1` で各行を `ErrorRecord` に包み `$?` を false にするが、実機(5.1.26100、
+Desktop)では出力に余計な文字は混ざらず、ツールの成否は終了コードで決まり、
+標準エラー出力だけに警告を出して終了コード 0 で終わるテストも失敗扱いにならない
+ことを確認した。
 
 `check-claude-md-length.sh` は `PostToolUse` では書き込みをブロックできない
 (exit code 2 が効かない)ため、`PreToolUse` の時点で編集後の行数を予測して
@@ -152,11 +156,16 @@ Consider moving some of this into a skill before it hits the block threshold.
 - **PowerShell 版は終了コードが保たれる**: Windows 11 の PowerShell ツールで、
   失敗するテストを実行したところ、フィルタ後も元のコマンドの終了コード(1)が
   `Exit code 1` として返ることを確認した。他の PowerShell のバージョンでは未確認
-- **PowerShell 版は標準エラー出力を絞り込まない**: `2>&1` を付けないため、
-  ネイティブコマンドの標準エラー出力はパイプを通らず、そのまま出る。実機で、
-  パターンに一致しない標準エラー出力(node の起動エラーのスタックトレース)が
-  全文出ることを確認した。テスト結果を標準エラー出力へ書くランナー(例: Jest)では、
-  絞り込みの効果が出ない可能性がある(ランナーごとの挙動は未確認)
+- **PowerShell 版の標準エラー出力**: `2>&1` で標準エラー出力も絞り込む。結果を
+  標準エラー出力へ書くランナー(例: Jest)も対象になるはずだが、実際のランナーでの
+  挙動は未確認。実機では Windows PowerShell 5.1(Desktop)と PowerShell 7.7(Core)の
+  両方で、絞り込み、終了コードの保持、成功時の空出力を確認した
+- **出力の順序**: 標準出力と標準エラー出力の順序が入れ替わることがあり、標準エラー
+  出力の行が、一致行の後ろの文脈行(`-Context 0,5`)として出ることがある
+  (PowerShell 7.7 で確認。原因は両者が別経路で届くためと推測している)
+- **PowerShell プロファイル**: PowerShell ツールはプロファイルを読み込まない
+  (公式ドキュメントの preview 時点の制限)ため、プロファイルでの
+  `$ErrorActionPreference` の設定は、このフィルタに影響しない
 - **絞り込みは行単位**: 失敗を示す行にパターンが含まれないランナーでは、失敗が
   出力から落ちることがある
 

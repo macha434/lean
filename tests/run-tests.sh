@@ -59,26 +59,6 @@ check_contains() {
   fi
 }
 
-# check_lacks <hook> <name> <substring that must NOT appear> <stdin json> [env assignments...]
-# Also requires non-empty output, so a hook that rewrote nothing can't pass.
-check_lacks() {
-  local hook=$1 name=$2 forbidden=$3 payload=$4
-  shift 4
-  local out
-  out=$(printf '%s' "$payload" | env "$@" "$hook" 2>/dev/null)
-  local ok=0
-  if [ -n "$out" ]; then
-    case "$out" in *"$forbidden"*) ;; *) ok=1 ;; esac
-  fi
-  if [ "$ok" = "1" ]; then
-    pass=$((pass + 1))
-    printf 'ok   %s\n' "$name"
-  else
-    fail=$((fail + 1))
-    printf 'FAIL %s (expected output without %s, got: %s)\n' "$name" "$forbidden" "$out"
-  fi
-}
-
 ### check-file-size.sh ###
 
 check "$HOOK" "large file from main session is blocked" deny \
@@ -169,11 +149,11 @@ check_contains "$PS_HOOK" "npm test is rewritten to filter failures" "Select-Str
   '{"tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
   IGNORE=1
 
-check_contains "$PS_HOOK" "rewritten command keeps the original command first" '"command": "npm test | Out-String -Stream' \
+check_contains "$PS_HOOK" "rewritten command keeps the original command first" '"command": "npm test 2>&1 | Out-String -Stream' \
   '{"tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
   IGNORE=1
 
-check_lacks "$PS_HOOK" "rewrite does not append 2>&1" '2>&1' \
+check_contains "$PS_HOOK" "rewrite merges stderr into the pipeline" "npm test 2>&1 | Out-String -Stream | Select-String" \
   '{"tool_name":"PowerShell","tool_input":{"command":"npm test"}}' \
   IGNORE=1
 

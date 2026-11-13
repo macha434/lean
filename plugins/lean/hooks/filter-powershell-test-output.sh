@@ -4,8 +4,12 @@
 # filter-bash-test-output.sh. Keeps a 10,000-line test log out of the
 # conversation.
 #
-# No "2>&1" is appended: in Windows PowerShell 5.1 it wraps every stderr line of
-# a native command in an ErrorRecord and flips $? to false even on exit code 0.
+# "2>&1" merges the native command's stderr into the pipeline so that it is
+# filtered too. Without it, stderr bypasses the filter and flows in unfiltered
+# (verified on a real machine). Windows PowerShell 5.1 wraps each stderr line in
+# an ErrorRecord and flips $? to false, but on 5.1.26100 (Desktop) the text
+# stays clean, the tool reports success or failure by exit code, and a
+# stderr-only warning with exit code 0 is not reported as a failure.
 #
 # -CaseSensitive is required: Select-String ignores case by default, so a name
 # like "test-fail.js" in npm's "> node test-fail.js" header would match "FAIL".
@@ -47,7 +51,7 @@ case "$max_lines" in
   '' | *[!0-9]*) max_lines=100 ;;
 esac
 
-filtered_cmd="$cmd | Out-String -Stream | Select-String -Pattern 'FAIL|ERROR|error:' -CaseSensitive -Context 0,5 | Select-Object -First $max_lines"
+filtered_cmd="$cmd 2>&1 | Out-String -Stream | Select-String -Pattern 'FAIL|ERROR|error:' -CaseSensitive -Context 0,5 | Select-Object -First $max_lines"
 
 printf '%s' "$input" | jq --arg cmd "$filtered_cmd" '{
   hookSpecificOutput: {
