@@ -4,6 +4,7 @@
     "name": "macha434",
     "url": "https://github.com/macha434"
   },
+  "description": "Claude Code plugins by macha434 that cut token usage by keeping bulk reads, boilerplate generation, verbose test output, and CLAUDE.md bloat out of the main conversation.",
   "plugins": [
     {
       "name": "lean",
