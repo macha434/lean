@@ -143,6 +143,41 @@ check_contains "$BASH_HOOK" "disable flag leaves a test command unmodified" EMPT
   '{"tool_name":"Bash","tool_input":{"command":"npm test"}}' \
   LEAN_DISABLE=1
 
+# Execute the rewritten command with a fake "pytest" and verify what the Bash
+# tool would actually see: the output and, above all, the exit status.
+mkdir -p "$TMP/bin"
+cat >"$TMP/bin/pytest" <<'FAKE'
+#!/usr/bin/env bash
+case "$FAKE_MODE" in
+  fail)  echo "collected 3"; echo "FAIL test_a"; echo "  assert 1 == 2"; exit 1 ;;
+  crash) echo "No test files found"; exit 1 ;;
+  pass)  echo "3 passed"; exit 0 ;;
+esac
+FAKE
+chmod +x "$TMP/bin/pytest"
+
+# check_exec <name> <fake mode> <original command> <expected exit> <expected output substring>
+check_exec() {
+  local name=$1 mode=$2 orig=$3 want_rc=$4 want_out=$5
+  local payload rewritten out rc
+  payload=$(jq -cn --arg c "$orig" '{tool_name:"Bash",tool_input:{command:$c}}')
+  rewritten=$(printf '%s' "$payload" | env IGNORE=1 "$BASH_HOOK" | jq -r '.hookSpecificOutput.updatedInput.command')
+  out=$(PATH="$TMP/bin:$PATH" FAKE_MODE=$mode bash -c "$rewritten" 2>&1)
+  rc=$?
+  if [ "$rc" = "$want_rc" ] && case "$out" in *"$want_out"*) true ;; *) false ;; esac; then
+    pass=$((pass + 1))
+    printf 'ok   %s\n' "$name"
+  else
+    fail=$((fail + 1))
+    printf 'FAIL %s (expected exit %s with %s, got exit %s: %s)\n' "$name" "$want_rc" "$want_out" "$rc" "$out"
+  fi
+}
+
+check_exec "failing run keeps exit status 1 and shows the FAIL line" fail "pytest" 1 "FAIL test_a"
+check_exec "crash without FAIL/ERROR keeps exit status 1 and shows the tail" crash "pytest" 1 "No test files found"
+check_exec "passing run keeps exit status 0 and prints a one-line note" pass "pytest" 0 "exit 0, no FAIL/ERROR lines"
+check_exec "failing run stops an && chain" fail "pytest && echo NEXT_STEP_RAN" 1 "FAIL test_a"
+
 ### filter-powershell-test-output.sh ###
 
 check_contains "$PS_HOOK" "npm test is rewritten to filter failures" "Select-String -Pattern 'FAIL|ERROR|error:' -CaseSensitive -Context 0,5" \
